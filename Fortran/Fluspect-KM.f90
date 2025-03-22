@@ -17,6 +17,13 @@
 !       reflectance dynamics.
 !       Remote Sens. Environ. 211, 345–356. doi:10.1016/j.rse.2018.04.012
 !***************************************************************************************
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!
+! Please see https://github.com/Hanyu-Shi/Fluspect-KM for further updates.
+!
+! 2025-03-20. H.S. Update M3 to avoid unnecessary calculations for separated PSI and PSII.
+!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 module func_Fluspect_KM
     use fluspect2021_dataSpec, only : nw,KcaV,KcaZ,phi,k_Car,k_Car,k_Cab,k_Cm,k_Cw, &
@@ -46,6 +53,7 @@ contains
         real(8) :: kChlrel(nw),kChl(nw),s(nw),k(nw)
         real(8) :: f(nwlf,nwle),g(nwlf,nwle),fn(nwlf,nwle),gn(nwlf,nwle)
 
+        real(8) :: sigmoid(nwlf,nwle),varphi(nwlf,nwle)
         real(8) :: Kabs(nw)
         real(8) :: refl(nw),tran(nw)
 
@@ -68,24 +76,22 @@ contains
 
         call M1(ang,N,refractive,Kabs,refl,tran,r21,t21,ralf,talf,r12,t12)
         call M2(refl,tran,r21,t21,ralf,talf,rho,tau,s,k)
-
+        call M3(rho,tau,s,k,f,g)
+        call M4(rho,tau,r21,t21,talf,g,f,gn,fn)
 
         RT(:,2) = tran
         RT(:,1) = refl
 
         kChl = kChlrel * k
-
-
-        call M3(fqeI,phiI,kChl,rho,tau,s,k,f,g)
-        call M4(rho,tau,r21,t21,talf,g,f,gn,fn)
-        FLUO_I(:,:,1) = fn  ! Forward, PS-I
-        FLUO_I(:,:,2) = gn  ! Backward, PS-II
-
-
-        call M3(fqeII,phiII,kChl,rho,tau,s,k,f,g)
-        call M4(rho,tau,r21,t21,talf,g,f,gn,fn)
-        FLUO_II(:,:,1) = fn  ! Forward, PS-I
-        FLUO_II(:,:,2) = gn  ! Backward, PS-II
+        sigmoid = 1.d0 / (1.d0+vec2mat_matmul(nwlf,nwle,dexp(-wlf/10.d0),dexp(wle/10.d0)))
+        
+        varphi = fqeI*vec2mat_matmul(nwlf,nwle,(.5*phiI(Iwlf_s:Iwlf_e)),kChl(Iwle_s:Iwle_e))*sigmoid
+        FLUO_I(:,:,1) = fn * varphi ! Forward, PS-I
+        FLUO_I(:,:,2) = gn * varphi ! Backward, PS-I
+        
+        varphi = fqeII*vec2mat_matmul(nwlf,nwle,(.5*phiII(Iwlf_s:Iwlf_e)),kChl(Iwle_s:Iwle_e))*sigmoid
+        FLUO_II(:,:,1) = fn * varphi ! Forward, PS-II
+        FLUO_II(:,:,2) = gn * varphi ! Backward, PS-II
 
         return
     end subroutine
@@ -181,9 +187,9 @@ contains
 
     end subroutine
 
-    subroutine M3(fqe,PS_phi,kChl,rho,tau,s,k,Mf,Mb)
+    subroutine M3(rho,tau,s,k,Mf,Mb)
         implicit none
-        real(8), intent(in) :: fqe,PS_phi(nw),kChl(nw),rho(nw),tau(nw),s(nw),k(nw)
+        real(8), intent(in) :: rho(nw),tau(nw),s(nw),k(nw)
         real(8), intent(out) :: Mf(nwlf,nwle),Mb(nwlf,nwle)
 
         real(8) :: ae(nwle),se(nwle),mme(nwle),taue(nwle)
@@ -195,13 +201,10 @@ contains
 
         real(8) :: mempe(nwlf,nwle),meppe(nwlf,nwle),mempf(nwlf,nwle),meppf(nwlf,nwle)
         real(8) :: WWf(nwlf),WWg(nwlf)
-        real(8) :: sigmoid(nwlf,nwle),varphi(nwlf,nwle)
 
         integer :: i
 
 
-        sigmoid = 1.d0 / (1.d0+vec2mat_matmul(nwlf,nwle,dexp(-wlf/10.d0),dexp(wle/10.d0)))
-        varphi = fqe*vec2mat_matmul(nwlf,nwle,(.5*PS_phi(Iwlf_s:Iwlf_e)),kChl(Iwle_s:Iwle_e))*sigmoid
 
 
         se = s(Iwle_s:Iwle_e)
@@ -254,8 +257,6 @@ contains
             Mb(i,i+240) = WWg(i)
         enddo
 
-        Mf = Mf * varphi
-        Mb = Mb * varphi
 
     end subroutine
 

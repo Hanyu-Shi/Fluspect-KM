@@ -13,8 +13,11 @@
 
 ### MATLAB
 
-* The MATLAB version is being implemented.
+* The MATLAB version will be released soon.
 
+### Python
+
+* The Python version will be released soon.
 
 
 ### Citation
